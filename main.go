@@ -4,30 +4,37 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"fmt"
-	"log"
-	"math/big"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/joho/godotenv"
+	"log"
+	"math/big"
+	"os"
+	"strings"
 )
 
 const (
-	POLYGON_RPC = "https://polygon-rpc.com"
-	// If it is self-tx, the address of PRIVATE_KEY must be equals to TO_ADDRESS
-	PRIVATE_KEY = ""
-	TO_ADDRESS  = ""
-	TX_DATA     = "0x646174613a2c7b2270223a227072632d3230222c226f70223a226d696e74222c227469636b223a22706f6c73222c22616d74223a22313030303030303030227d"
+	envPath = ".env"
 )
 
 func main() {
-	client, err := ethclient.Dial(POLYGON_RPC)
+	if err := godotenv.Overload(strings.Split(envPath, ",")...); err != nil {
+		fmt.Println("Load env error", err.Error())
+	}
+
+	currentNonce := GetCurrentNonce()
+	Mint(currentNonce)
+}
+
+func GetCurrentNonce() uint64 {
+	client, err := ethclient.Dial(os.Getenv("POLYGON_RPC"))
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	privateKey, err := crypto.HexToECDSA(PRIVATE_KEY)
+	privateKey, err := crypto.HexToECDSA(os.Getenv("PRIVATE_KEY"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -43,6 +50,19 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	return nonce
+}
+
+func Mint(nonce uint64) {
+	client, err := ethclient.Dial(os.Getenv("POLYGON_RPC"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	privateKey, err := crypto.HexToECDSA(os.Getenv("PRIVATE_KEY"))
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	value := big.NewInt(0)    // in wei (1 eth)
 	gasLimit := uint64(21000) // in units
@@ -51,8 +71,17 @@ func main() {
 		log.Fatal(err)
 	}
 
-	toAddress := common.HexToAddress(TO_ADDRESS)
-	data := common.Hex2Bytes(TX_DATA)
+	toAddress := common.HexToAddress(os.Getenv("TO_ADDRESS"))
+
+	dataStr := fmt.Sprintf(`data:,{"p":"%s","op":"%s","tick":"%s","amt":"%s"}`,
+		os.Getenv("PROTOCOL"),
+		os.Getenv("OPERATION"),
+		os.Getenv("SYMBOL"),
+		os.Getenv("AMOUNT"),
+	)
+
+	data := []byte(dataStr)
+
 	tx := types.NewTx(&types.LegacyTx{
 		Nonce:    nonce,
 		To:       &toAddress,
@@ -77,6 +106,5 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("tx sent: %s", tx.Hash().Hex()) //
-
+	fmt.Printf("tx sent: %s\n", tx.Hash().Hex()) //
 }
