@@ -12,11 +12,12 @@ import (
 	"log"
 	"math/big"
 	"os"
+	"strconv"
 	"strings"
 )
 
 const (
-	envPath = ".env"
+	envPath = ".env,.env.local"
 )
 
 func main() {
@@ -24,8 +25,22 @@ func main() {
 		fmt.Println("Load env error", err.Error())
 	}
 
+	amount, err := strconv.Atoi(os.Getenv("AMOUNT_CALL"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	currentNonce := GetCurrentNonce()
-	Mint(currentNonce)
+	for i := 0; i < amount; i++ {
+		log.Println(currentNonce)
+		err := Mint(currentNonce)
+		if err != nil {
+			log.Println(err)
+			i = i - 1
+			continue
+		}
+		currentNonce = currentNonce + 1
+	}
 }
 
 func GetCurrentNonce() uint64 {
@@ -53,24 +68,23 @@ func GetCurrentNonce() uint64 {
 	return nonce
 }
 
-func Mint(nonce uint64) {
+func Mint(nonce uint64) error {
 	client, err := ethclient.Dial(os.Getenv("POLYGON_RPC"))
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	privateKey, err := crypto.HexToECDSA(os.Getenv("PRIVATE_KEY"))
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	value := big.NewInt(0)    // in wei (1 eth)
-	gasLimit := uint64(21000) // in units
+	gasLimit := uint64(30000) // in units
 	gasPrice, err := client.SuggestGasPrice(context.Background())
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-
 	toAddress := common.HexToAddress(os.Getenv("TO_ADDRESS"))
 
 	dataStr := fmt.Sprintf(`data:,{"p":"%s","op":"%s","tick":"%s","amt":"%s"}`,
@@ -81,7 +95,6 @@ func Mint(nonce uint64) {
 	)
 
 	data := []byte(dataStr)
-
 	tx := types.NewTx(&types.LegacyTx{
 		Nonce:    nonce,
 		To:       &toAddress,
@@ -93,18 +106,19 @@ func Mint(nonce uint64) {
 
 	chainID, err := client.NetworkID(context.Background())
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(chainID), privateKey)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	err = client.SendTransaction(context.Background(), signedTx)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
-	fmt.Printf("tx sent: %s\n", tx.Hash().Hex()) //
+	log.Println("Tx Hash", signedTx.Hash().String())
+	return nil
 }
